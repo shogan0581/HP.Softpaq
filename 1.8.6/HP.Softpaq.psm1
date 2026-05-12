@@ -1930,6 +1930,9 @@ function New-HPPrivateSoftPaqListManifest {
 .PARAMETER TempDownloadPath
   Specifies an alternate temporary location to download content. Please note that this location and all files inside will be deleted once driver pack is created. If not specified, the default temporary directory path is used.
 
+.PARAMETER ExternalManifestPath
+  Specifies a location to copy the generated manifest files to in addition to keeping them in the driver pack.
+
 .EXAMPLE
   Get-HPSoftpaqList -platform 880D -os 'win10' -osver '21H2' | New-HPBuildDriverPack -Os Win10 -OsVer 21H1 -Name 'DP880D'
 
@@ -1973,7 +1976,10 @@ function New-HPBuildDriverPack {
     [switch]$Overwrite,
 
     [Parameter(Mandatory = $false, Position = 8)] 
-    [System.IO.DirectoryInfo]$TempDownloadPath
+    [System.IO.DirectoryInfo]$TempDownloadPath,
+
+    [Parameter(Mandatory = $false, Position = 9)]
+    [System.IO.DirectoryInfo]$ExternalManifestPath
   )
   BEGIN {
     $softpaqsArray = @()
@@ -2081,6 +2087,17 @@ function New-HPBuildDriverPack {
     New-HPPrivateSoftPaqListManifest -Softpaqs $softpaqsArray -Name $Name -Os $Os -OsVer $OsVer -Format Json | Out-File -LiteralPath "$manifestPath.json"
     Write-Verbose "Creating manifest file: $manifestPath.xml"
     New-HPPrivateSoftPaqListManifest -Softpaqs $softpaqsArray -Name $Name -Os $Os -OsVer $OsVer -Format XML | Out-File -LiteralPath "$manifestPath.xml"
+    if ($ExternalManifestPath) {
+      if (-not [System.IO.Directory]::Exists($ExternalManifestPath)) {
+        Write-Verbose "Creating ExternalManifestPath: $ExternalManifestPath"
+        [System.IO.Directory]::CreateDirectory($ExternalManifestPath) | Out-Null
+        if (-not [System.IO.Directory]::Exists($ExternalManifestPath)) {
+          throw "An error occurred while creating directory $ExternalManifestPath"
+        }
+      }
+      Write-Verbose "Copying $manifestPath.* to $ExternalManifestPath"
+      Copy-Item "$manifestPath.*" $ExternalManifestPath -Force
+    }
 
     foreach ($ientry in $softpaqsArray) {
       Write-Verbose "Processing $($ientry.id)"
@@ -2385,6 +2402,9 @@ param(
 .PARAMETER TempDownloadPath
   Specifies an alternate temporary location to download content. Please note that this location and all files inside will be deleted once driver pack is created. If not specified, the default temporary directory path is used.
 
+.PARAMETER ExternalManifestPath
+  Specifies a location to copy the generated manifest files to in addition to keeping them in the driver pack.
+
   .EXAMPLE
   New-HPDriverPack -WhatIf
 
@@ -2433,7 +2453,10 @@ function New-HPDriverPack {
     [switch]$Overwrite,
 
     [Parameter(Mandatory = $false, Position = 10)]
-    [System.IO.DirectoryInfo]$TempDownloadPath
+    [System.IO.DirectoryInfo]$TempDownloadPath,
+
+    [Parameter(Mandatory = $false, Position = 11)]
+    [System.IO.DirectoryInfo]$ExternalManifestPath
   )
 
   # 7zip and Win format require admin privilege
@@ -2529,6 +2552,7 @@ function New-HPDriverPack {
         Os = $Os
         OsVer = $OSVer
         TempDownloadPath = $TempDownloadPath
+        ExternalManifestPath = $ExternalManifestPath
       }
       if ($Path) {
         $params.Path = $Path
@@ -2584,6 +2608,9 @@ function New-HPDriverPack {
 .PARAMETER TempDownloadPath
   Specifies an alternate temporary location to download content. Please note that this location and all files inside will be deleted once driver pack is created. If not specified, the default temporary directory path is used.
 
+.PARAMETER ExternalManifestPath
+  Specifies a location to copy the generated manifest files to in addition to keeping them in the driver pack.
+
 .EXAMPLE
   New-HPUWPDriverPack -WhatIf
 
@@ -2630,7 +2657,10 @@ function New-HPUWPDriverPack {
     [switch]$Overwrite,
 
     [Parameter(Mandatory = $false, Position = 9)]
-    [System.IO.DirectoryInfo]$TempDownloadPath
+    [System.IO.DirectoryInfo]$TempDownloadPath,
+    
+    [Parameter(Mandatory = $false, Position = 10)]
+    [System.IO.DirectoryInfo]$ExternalManifestPath
   )
 
   # 7zip and Win format require admin privilege
@@ -2711,6 +2741,7 @@ function New-HPUWPDriverPack {
         Os = $Os
         OsVer = $OSVer
         TempDownloadPath = $TempDownloadPath
+        ExternalManifestPath = $ExternalManifestPath
       }
       if ($Path) {
         $params.Path = $Path
@@ -2750,7 +2781,10 @@ function New-HPPrivateBuildUWPDriverPack {
     [switch]$Overwrite,
 
     [Parameter(Mandatory = $false, Position = 8)]
-    [System.IO.DirectoryInfo]$TempDownloadPath
+    [System.IO.DirectoryInfo]$TempDownloadPath,
+
+    [Parameter(Mandatory = $false, Position = 9)]
+    [System.IO.DirectoryInfo]$ExternalManifestPath
   )
   BEGIN {
     $softpaqsArray = @()
@@ -2856,6 +2890,17 @@ function New-HPPrivateBuildUWPDriverPack {
     New-HPPrivateSoftPaqListManifest -Softpaqs $softpaqsArray -Name $Name -Os $Os -OsVer $OsVer -Format Json | Out-File -LiteralPath "$manifestPath.json"
     Write-Verbose "Creating manifest file: $manifestPath.xml"
     New-HPPrivateSoftPaqListManifest -Softpaqs $softpaqsArray -Name $Name -Os $Os -OsVer $OsVer -Format XML | Out-File -LiteralPath "$manifestPath.xml"
+    if ($ExternalManifestPath) {
+      if (-not [System.IO.Directory]::Exists($ExternalManifestPath)) {
+        Write-Verbose "Creating ExternalManifestPath: $ExternalManifestPath"
+        [System.IO.Directory]::CreateDirectory($ExternalManifestPath) | Out-Null
+        if (-not [System.IO.Directory]::Exists($ExternalManifestPath)) {
+          throw "An error occurred while creating directory $ExternalManifestPath"
+        }
+      }
+      Write-Verbose "Copying manifest files: $ExternalManifestPath"
+      Copy-Item $manifestPath $ExternalManifestPath -Filter "manifest.*" -Force
+    }
 
     foreach ($softpaq in $softpaqsArray) {
       Write-Verbose "Processing $($softpaq.id)"
