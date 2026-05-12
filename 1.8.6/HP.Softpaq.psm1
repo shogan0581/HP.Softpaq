@@ -1933,6 +1933,9 @@ function New-HPPrivateSoftPaqListManifest {
 .PARAMETER ExternalManifestPath
   Specifies a location to copy the generated manifest files to in addition to keeping them in the driver pack.
 
+.PARAMETER ForceNonDPB
+  Include drivers that do not have the DPB flag set if an inf can still be found in them. 
+
 .EXAMPLE
   Get-HPSoftpaqList -platform 880D -os 'win10' -osver '21H2' | New-HPBuildDriverPack -Os Win10 -OsVer 21H1 -Name 'DP880D'
 
@@ -1979,7 +1982,10 @@ function New-HPBuildDriverPack {
     [System.IO.DirectoryInfo]$TempDownloadPath,
 
     [Parameter(Mandatory = $false, Position = 9)]
-    [System.IO.DirectoryInfo]$ExternalManifestPath
+    [System.IO.DirectoryInfo]$ExternalManifestPath,
+
+    [Parameter(Mandatory = $false, Position = 10)]
+    [switch]$ForceNonDPB
   )
   BEGIN {
     $softpaqsArray = @()
@@ -2116,7 +2122,7 @@ function New-HPBuildDriverPack {
         continue
       }
 
-      if ($metadata.ContainsKey('Devices_INFPath')) {
+      if ($metadata.ContainsKey('Devices_INFPath') -or $ForceNonDPB) {
         # fix folder naming issue when softpaq name contains '/',(ex. "Intel TXT/ACM" driver)
         $downloadFilePath = [IO.Path]::Combine($downloadPath, "$($ientry.id).exe")
         Write-Verbose "Downloading SoftPaq $downloadFilePath"
@@ -2141,31 +2147,45 @@ function New-HPBuildDriverPack {
         }
         Set-Location $cwd
 
-        $OsId = if ($Os -eq 'Win11') { 'W11' } else { 'WT64' }
-        $fullInfPathName = "$($OsId)_$($OSVer.ToUpper())_INFPath"
-        if ($metadata.Devices_INFPath.ContainsKey($fullInfPathName)) {
-          $infPathName = $fullInfPathName
+        # if ForceNonDPB then attempt to find an INFPath for $metadata.Devices_INFPath
+        $infCount = @{n="infCount";e={@($_ | Get-ChildItem -Filter "*.inf" -Recurse).Count};}
+        $infDirectories = @(Get-Item -Path $(Join-Path $downloadPath $extractFolderName) | Select-Object FullName,$infCount)
+        if ($ForceNonDPB -and ($infDirectories[0].infCount -gt 0)) {
+          $infDirectories += @(Get-ChildItem -Path $infDirectories[0].FullName -Recurse -Directory | Select-Object FullName,$infCount | Where-Object {$_.infCount -eq $infDirectories[0].infCount})
+          $INFPath = $($infDirectories[-1].FullName -replace "$([regex]::Escape($infDirectories[0].FullName))\\*","")
+          Write-Verbose "Setting Devices_INFPaths to $INFPath"
+          $metadata.Devices_INFPath = @{"_body"=@("")}
+          $metadata.Devices_INFPath.W11_INFPath = $INFPath
+          $metadata.Devices_INFPath.WT64_INFPath = $INFPath
         }
-        else {
-          # fallback to generic inf path name
-          $infPathName = "$($OsId)_INFPath"
-        }
-        if ($metadata.Devices_INFPath.ContainsKey($infPathName)) {
-          Write-Verbose "$infPathName selected"
-          $infPaths = $($metadata.Devices_INFPath[$infPathName])
-          $finalExtractFolderName = $ientry.id
-          $destinationPath = [IO.Path]::Combine($workingPath, $finalExtractFolderName)
-          $extractPath = [IO.Path]::Combine($downloadPath, $extractFolderName)
-          [System.IO.Directory]::CreateDirectory($destinationPath) | Out-Null
-          foreach ($infPath in $infPaths) {
-            $infPath = $infPath.TrimStart('.\')
-            $absoluteInfPath = [IO.Path]::Combine($extractPath, $infPath)
-            Write-Verbose "Copying $absoluteInfPath to $destinationPath"
-            Copy-Item $absoluteInfPath $destinationPath -Force -Recurse
+
+        if ($metadata.ContainsKey('Devices_INFPath')) {
+          $OsId = if ($Os -eq 'Win11') { 'W11' } else { 'WT64' }
+          $fullInfPathName = "$($OsId)_$($OSVer.ToUpper())_INFPath"
+          if ($metadata.Devices_INFPath.ContainsKey($fullInfPathName)) {
+            $infPathName = $fullInfPathName
           }
-        }
-        else {
-          Write-Warning "INF path $fullInfPathName missing on $($ientry.id) metadata. This will not be included in the package."
+          else {
+            # fallback to generic inf path name
+            $infPathName = "$($OsId)_INFPath"
+          }
+          if ($metadata.Devices_INFPath.ContainsKey($infPathName)) {
+            Write-Verbose "$infPathName selected"
+            $infPaths = $($metadata.Devices_INFPath[$infPathName])
+            $finalExtractFolderName = $ientry.id
+            $destinationPath = [IO.Path]::Combine($workingPath, $finalExtractFolderName)
+            $extractPath = [IO.Path]::Combine($downloadPath, $extractFolderName)
+            [System.IO.Directory]::CreateDirectory($destinationPath) | Out-Null
+            foreach ($infPath in $infPaths) {
+              $infPath = $infPath.TrimStart('.\')
+              $absoluteInfPath = [IO.Path]::Combine($extractPath, $infPath)
+              Write-Verbose "Copying $absoluteInfPath to $destinationPath"
+              Copy-Item $absoluteInfPath $destinationPath -Force -Recurse
+            }
+          }
+          else {
+            Write-Warning "INF path $fullInfPathName missing on $($ientry.id) metadata. This will not be included in the package."
+          }
         }
       }
       else {
