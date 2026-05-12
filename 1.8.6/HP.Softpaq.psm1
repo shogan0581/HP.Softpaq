@@ -729,6 +729,9 @@ function Clear-HPSoftpaqCache {
   If specified, this command finds the softPaqs associated with the platform ID regardless of the current OS, OS version and bitness running on the current device. If multiple reference files are found, the command will use the reference file associated with the latest OS combination. 
   If used with the PreferLTSC parameter, this command will check all the LTSC reference files only and will not check the regular reference files.
 
+.PARAMETER RemoveOlder
+  If specified, older versions of the same SoftPaq are not included in output.
+
 .EXAMPLE
   Get-HPSoftpaqList -Download
 
@@ -869,7 +872,10 @@ function Get-HPSoftpaqList {
     [Parameter(Position = 20,Mandatory = $false,ParameterSetName = "ViewParams")] [switch]$AddHttps,
 
     [Parameter(ParameterSetName = "DownloadParams")]
-    [Parameter(Position = 21,Mandatory = $false,ParameterSetName = "ViewParams")] [switch]$LatestSupportedOS
+    [Parameter(Position = 21,Mandatory = $false,ParameterSetName = "ViewParams")] [switch]$LatestSupportedOS,
+
+    [Parameter(ParameterSetName = "DownloadParams")]
+    [Parameter(Position = 22,Mandatory = $false,ParameterSetName = "ViewParams")] [switch]$RemoveOlder
   )
 
   if (Test-HPWinPE) {
@@ -1308,6 +1314,11 @@ function Get-HPSoftpaqList {
           Invoke-HPPrivateDownloadFile -url $loc -Target "$target.htm" -progress $progress -NoClobber $overwrite -Verbose:$VerbosePreference -skipSignatureCheck -maxRetries $maxRetries
         }
       }
+    }
+
+    # remove older Softpaqs
+    if ($RemoveOlder) {
+      $results = try {Remove-HPPrivateOlderSoftpaqEntries -pFullSoftpaqList $($results | Select-Object * -Unique) -Quiet:$Quiet} catch {$results}
     }
 
     $result = $results | Select-Object * -Unique
@@ -2303,9 +2314,10 @@ param(
 function Remove-HPPrivateOlderSoftpaqEntries {
   [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)] $pFullSoftpaqList
+  [Parameter(Mandatory = $true)] $pFullSoftpaqList,
+  [Parameter(Mandatory = $false)] [switch]$Quiet
   )
-  Write-Host "Removing superseded entries (-RemoveOlder switch option)"
+  if (-not $Quiet) { Write-Host "Removing superseded entries (-RemoveOlder switch option)" }
   #############################################################################
   # 1. get a list of Softpaqs with multiple entries
   $l_TmpList = @()
@@ -2317,9 +2329,9 @@ param(
       } # foreach ( $i in $pFullSoftpaqList )
   } # foreach ( $iEntry in $pFullSoftpaqList )
   if ($l_TmpList.Count -gt 0) {
-    Write-Host "These drivers have multiple SoftPaqs (have superseded entries)"
+    if (-not $Quiet) { Write-Host "These drivers have multiple SoftPaqs (have superseded entries)" }
     foreach ( $iun in $l_TmpList ) {
-      Write-Host "`t$($iun.id) $($iun.Name) [$($iun.Category)] $($iun.Version)"
+      if (-not $Quiet) { Write-Host "`t$($iun.id) $($iun.Name) [$($iun.Category)] $($iun.Version)" }
     }
   }
 
@@ -2354,9 +2366,9 @@ param(
   } 
 
   if ($l_FinalTmpList.Count -gt 0) {
-    Write-Host "These SoftPaqs are good - higher SP numbers"
+    if (-not $Quiet) { Write-Host "These SoftPaqs are good - higher SP numbers" }
     foreach ( $iun in $l_FinalTmpList ) {
-      Write-Host "`t$($iun.id) $($iun.Name) [$($iun.Category)] $($iun.Version)"
+      if (-not $Quiet) { Write-Host "`t$($iun.id) $($iun.Name) [$($iun.Category)] $($iun.Version)" }
     }
   }
   #############################################################################
@@ -2539,7 +2551,7 @@ function New-HPDriverPack {
 
   # remove any Softpaqs matching names in $UnselectList from the returned list
   if ($RemoveOlder) {
-      $FinalListofSoftpaqs = Remove-HPPrivateOlderSoftpaqEntries -pFullSoftpaqList $DPBList
+      $FinalListofSoftpaqs = try { Remove-HPPrivateOlderSoftpaqEntries -pFullSoftpaqList $DPBList } catch { $DPBList }
       [array]$DPBList = $FinalListofSoftpaqs
   }
 
